@@ -15,6 +15,8 @@ import time
 import paho.mqtt.client as mqtt
 import datetime
 
+from APsystemsEZ1 import APsystemsEZ1M
+
 try:
   import thread   # for daemon = True  / Python 2.x
 except:
@@ -133,6 +135,21 @@ class HmInverter:
     for i in range(1, 5):
       self._inverterData[1][f'{i}/current'] = 0
 
+    #APSystems
+    self._inverterData[2] = {}
+    self._inverterData[2]['0/power'] = 0 # p1 + p2
+    self._inverterData[2]['0/voltage'] = 0 # no voltage info
+    self._inverterData[2]['0/current'] = 0 # no current info
+    self._inverterData[2]['0/powerdc'] = 0 # no powerdc Info
+    self._inverterData[2]['0/frequency'] = 0 # no frequency info
+    self._inverterData[2]['0/yieldtotal'] = 0 # te1 + te2
+    self._inverterData[2]['1/voltage'] = 0 # no info
+    self._inverterData[2]['0/efficiency'] = 0 # no info 
+    self._inverterData[2]['0/temperature'] = 0 # no info
+
+    for i in range(1, 5):
+      self._inverterData[2][f'{i}/current'] = 0
+
     self._initDbusMonitor()
 
     self._init_device_settings()
@@ -141,13 +158,20 @@ class HmInverter:
 
     self._MQTTName = "{}-{}".format(VRMserial,self._serial) 
     self._inverterPath = self.settings['/InverterPath']
-    self._init_MQTT()
+    
+    if self.settings['/DTU'] == 2:
+      self._init_REST()
+    else:
+      self._init_MQTT()
+
 
     base = 'com.victronenergy'
 
     # Create dbus device
     if self.settings['/DTU'] == 0:
       dtu = "Ahoy"
+    elif self.settings['/DTU'] == 2:
+      dtu = "APSystems"
     else:
       dtu = "OpenDTU"
 
@@ -349,13 +373,16 @@ class HmInverter:
         '/MqttUser':                      [path + '/MqttUser', '', 0, 0],
         '/MqttPwd':                       [path + '/MqttPwd', '', 0, 0],
         '/InverterPath':                  [path + '/InverterPath', 'inverter/HM-600', 0, 0],
-        '/DTU':                           [path + '/DTU', 0, 0, 1],
+        '/DTU':                           [path + '/DTU', 0, 0, 2],
         '/InverterID':                    [path + '/InverterID', 0, 0, 9],
         '/Enabled':                       [path + '/Enabled', 1, 0, 1],
         '/Position':                      [path + '/Position', 0, 0, 2],
         '/AutoRestart':                   [path + '/AutoRestart', 0, 0, 1],
         '/CalibrationValues':             [path + '/CalibrationValues', '', 0, 0],
         '/Calibration':                   [path + '/Calibration', 0, 0, 1],
+        '/APSystUrl':                     [path + '/APSystUrl', '127.0.0.1', 0, 0],
+        '/APSystPort':                    [path + '/APSystPort', 8050, 0, 0]
+
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -380,23 +407,28 @@ class HmInverter:
       
     elif setting == '/InverterPath':
       self._inverterPath = newvalue
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
     
     elif setting == '/MqttUrl':
       self.settings['/MqttUrl'] = newvalue
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
 
     elif setting == '/MqttPort':
       self.settings['/MqttPort'] = newvalue
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
      
     elif setting == '/MqttUser':
       self.settings['/MqttUser'] = newvalue
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
      
     elif setting == '/MqttPwd':
       self.settings['/MqttPwd'] = newvalue
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
       
     elif setting == '/Enabled':
       if self._role == 'acload':
@@ -406,9 +438,12 @@ class HmInverter:
     elif setting == '/DTU':
       if self.settings['/DTU'] == 0:
         self._dbusservice['/Mgmt/Connection'] = "Ahoy"
+      elif self.settings['/DTU'] == 2:
+        self._dbusservice['/Mgmt/Connection'] = "APSystems"
       else:
         self._dbusservice['/Mgmt/Connection'] = "OpenDTU"
-      self._MQTT_connect()
+      if self.settings['/DTU'] != 2:
+        self._MQTT_connect()
 
 
   def _checkInverterState(self):
@@ -451,17 +486,28 @@ class HmInverter:
 
   def _inverterOn(self):
     logging.log(EXTINFO,"Inverter %s on" % (self._serial))
-    self._MQTTclient.publish(self._inverterControlPath('power'), 1)
+    if (self.settings['/DTU'] == 2):
+      self._InverterClient.set_device_power_status("ON")
+    else:
+      self._MQTTclient.publish(self._inverterControlPath('power'), 1)
+    
 
 
   def _inverterOff(self):
     logging.log(EXTINFO,"Inverter %s off" % (self._serial))
-    self._MQTTclient.publish(self._inverterControlPath('power'), 0)
+    if (self.settings['/DTU'] == 2):
+      self._InverterClient.set_device_power_status("OFF")
+    else:
+      self._MQTTclient.publish(self._inverterControlPath('power'), 0)
+
 
 
   def _inverterRestart(self):
     logging.log(EXTINFO,"Inverter %s restart" % (self._serial))
-    self._MQTTclient.publish(self._inverterControlPath('restart'), 1)
+    if (self.settings['/DTU'] == 2):
+      return
+    else:
+      self._MQTTclient.publish(self._inverterControlPath('restart'), 1)
 
 
   def _inverterSetLimit(self, newLimit, force=False):
@@ -475,7 +521,10 @@ class HmInverter:
     currentPower  = int(self._dbusservice['/Ac/PowerLimit'] )
 
     if newPower != currentPower or force == True:
-      self._MQTTclient.publish(self._inverterControlPath('limit'), self._inverterFormatLimit(self._getCalibratedPower(newPower)))
+      if (self.settings['/DTU'] == 2):
+        self._InverterClient.set_max_power(self._inverterFormatLimit(newPower))
+      else:
+        self._MQTTclient.publish(self._inverterControlPath('limit'), self._inverterFormatLimit(self._getCalibratedPower(newPower)))
       self._limitDeviationCounter = 0
 
 
@@ -500,9 +549,10 @@ class HmInverter:
 
       # 1min interval
       if self._inverterLoopCounter % 120 == 0:
-        if self._MQTTclient.is_connected() == False:
-          logging.warning("MQTT not connected, try reconnect (SN:%s)" % (self._serial))
-          self._MQTT_connect()
+        if (self.settings['/DTU'] != 2):
+          if self._MQTTclient.is_connected() == False:
+            logging.warning("MQTT not connected, try reconnect (SN:%s)" % (self._serial))
+            self._MQTT_connect()
 
       # 5min interval
       if self._inverterLoopCounter % 600 == 0:
@@ -518,6 +568,7 @@ class HmInverter:
 
 
   def _inverterUpdate(self):
+
     try:
 
       pvinverter_phase = 'L' + str(self.settings['/Phase'])        
@@ -536,6 +587,21 @@ class HmInverter:
         currentDC = 0
         for i in range(1, 5):
           currentDC -= self._inverterData[0][f'ch{i}/I_DC']
+
+      elif self.settings['/DTU'] == 2:
+        powerAC     = self._inverterData[1]['0/power']
+        voltageAC   = self._inverterData[2]['0/voltage']
+        currentAC   = self._inverterData[2]['0/current']
+        frequency   = self._inverterData[2]['0/frequency']
+        yieldTotal  = self._inverterData[2]['0/yieldtotal']
+        efficiency  = self._inverterData[2]['0/efficiency']
+        volatageDC  = self._inverterData[2]['1/voltage']
+        powerDC     = self._inverterData[2]['0/powerdc']
+        temperature = self._inverterData[2]['0/temperature']
+        currentDC = 0
+        for i in range(1, 5):
+          currentDC -= self._inverterData[1][f'{i}/current']
+              
       else:
         # OpenDTU
         powerAC     = self._inverterData[1]['0/power']
@@ -582,7 +648,7 @@ class HmInverter:
       logging.exception('Error at %s', '_update', exc_info=e)
 
     return True
-
+  
 
   def _init_MQTT(self):
     self._MQTTclient = mqtt.Client(self._MQTTName) # create new instance
@@ -646,6 +712,34 @@ class HmInverter:
 
       except Exception as e:
           logging.exception('Error at %s', '_on_MQTT_message', exc_info=e)
+
+
+  def _init_REST(self):
+    self._InverterClient = APsystemsEZ1M(self.settings["/APSystUrl"], self.settings["/APSystPort"], timeout = 10)
+    self._InverterClient.set_device_power_status()
+    self._InverterClient_thread = thread(target=self._REST_Loop)
+    self._InverterClient_thread.daemon = True
+    self._InverterClient_thread.start()
+    return
+
+  def _REST_Loop(self):
+    while True:
+      response = self._InverterClient.get_output_data()
+      if (response == None):
+        counter += 1
+      
+      self._inverterData[2]['0/power'] = response.p1 + response.p2
+      self._inverterData[2]['0/voltage'] = 240 # no voltage info
+      self._inverterData[2]['0/current'] = (response.p1 + response.p2) / 240 # no current info
+      self._inverterData[2]['0/powerdc'] = None # no powerdc Info
+      self._inverterData[2]['0/frequency'] = None # no frequency info
+      self._inverterData[2]['0/yieldtotal'] = response.te1 + response.te2 # te1 + te2
+      self._inverterData[2]['1/voltage'] = None # no info
+      self._inverterData[2]['0/efficiency'] = None # no info 
+      self._inverterData[2]['0/temperature'] = None # no info
+
+      time.sleep(0.4)
+
 
 
   def _inverterControlPath(self, setting):
