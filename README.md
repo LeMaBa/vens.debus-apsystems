@@ -1,15 +1,18 @@
-# dbus-hoymiles
-Integrate Hoymiles microinverters into Victron Energies Venus OS
+# !Still under Development!
+
+# dbus-hoymiles and APSystems EZ1m
+Integrate Hoymiles and APSystems microinverters into Victron Energies Venus OS
 
 ## Purpose
-With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects Hoymiles microinverters to the VenusOS and GX devices from Victron. 
+With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects Hoymiles and Apsystems microinverters to the VenusOS and GX devices from Victron. 
 
-The script is intended to be used with battery powered Hoymiles inverters. It provides functions to regulate the output power of the inverters to realize a zero export system.
+The script is intended to be used with battery powered inverters. It provides functions to regulate the output power of the inverters to realize a zero export system.
 This script cannot be used in a system that already has a Multiplus/Quattro installed.
 
-As interface between the GX device and the Hoymiles microinverter OpenDTU or Ahoy is used:
+As interface between the GX device and the microinverter OpenDTU, Ahoy or the APSystems API is used:
 - https://github.com/tbnobody/OpenDTU
 - https://github.com/lumapu/ahoy
+- https://github.com/SonnenladenGmbH/APsystems-EZ1-API
 
 ## Inspiration
 This project is my first on GitHub and with the Victron Venus OS, so I took some ideas and approaches from the following projects - many thanks for sharing the knowledge:
